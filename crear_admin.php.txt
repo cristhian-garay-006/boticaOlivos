@@ -1,0 +1,83 @@
+<?php
+/**
+ * crear_admin.php
+ * Script sencillo para crear o forzar un usuario admin en la BD BoticaOlivosDB (MySQL).
+ *
+ * USO RECOMENDADO: ejecutar desde terminal (php crear_admin.php) o abrir temporalmente
+ * en el navegador (NO recomendado en producción). Eliminar este archivo después de usarlo.
+ */
+
+// ----- CONFIGURACIÓN: reemplaza con tus datos -----
+$dbHost = '127.0.0.1';
+$dbPort = '3306';
+$dbName = 'BoticaOlivosDB';
+$dbUser = 'root';
+$dbPass = ''; // contraseña de MySQL
+
+// Datos del admin que quieres crear / forzar
+$admin_nombre   = 'Administrador';
+$admin_apellido = 'Olivos';
+$admin_correo   = 'admin@olivos.local';
+$admin_pass     = 'Admin123!'; // cámbiala por una contraseña segura
+
+// --------------------------------------------------
+
+// No cambiar abajo salvo que sepas lo que haces
+try {
+    $dsn = "mysql:host=$dbHost;port=$dbPort;dbname=$dbName;charset=utf8mb4";
+    $pdo = new PDO($dsn, $dbUser, $dbPass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ]);
+} catch (PDOException $e) {
+    echo "Error conectando a la base de datos: " . $e->getMessage() . PHP_EOL;
+    exit(1);
+}
+
+// 1) Verificar si ya existe un usuario con ese correo
+$stmt = $pdo->prepare("SELECT id_usuario, rol FROM Usuarios WHERE correo = :correo LIMIT 1");
+$stmt->execute([':correo' => $admin_correo]);
+$existe = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if ($existe) {
+    // Si existe, y no es admin, actualizar rol a admin (forzar)
+    if ($existe['rol'] !== 'admin') {
+        $update = $pdo->prepare("UPDATE Usuarios SET rol = 'admin' WHERE id_usuario = :id");
+        $update->execute([':id' => $existe['id_usuario']]);
+        echo "Usuario existente (id={$existe['id_usuario']}) actualizado a rol 'admin'." . PHP_EOL;
+    } else {
+        echo "Usuario existente (id={$existe['id_usuario']}) ya tiene rol 'admin'." . PHP_EOL;
+    }
+
+    // (Opcional) actualizar contraseña si deseas forzarla:
+    $nuevo_hash = password_hash($admin_pass, PASSWORD_DEFAULT);
+    $updPass = $pdo->prepare("UPDATE Usuarios SET contraseña = :hash WHERE id_usuario = :id");
+    $updPass->execute([':hash' => $nuevo_hash, ':id' => $existe['id_usuario']]);
+    echo "Contraseña actualizada para el usuario (id={$existe['id_usuario']})." . PHP_EOL;
+    exit(0);
+}
+
+// 2) Si no existe, crear el usuario con rol 'admin'
+$hash = password_hash($admin_pass, PASSWORD_DEFAULT);
+
+$insert = $pdo->prepare(
+    "INSERT INTO Usuarios (nombre, apellido, correo, contraseña, rol, fecha_registro)
+     VALUES (:nombre, :apellido, :correo, :contraseña, 'admin', NOW())"
+);
+
+try {
+    $insert->execute([
+        ':nombre' => $admin_nombre,
+        ':apellido' => $admin_apellido,
+        ':correo' => $admin_correo,
+        ':contraseña' => $hash
+    ]);
+    $newId = $pdo->lastInsertId();
+    echo "Admin creado correctamente. id_usuario = {$newId}" . PHP_EOL;
+    echo "EMAIL: {$admin_correo}" . PHP_EOL;
+    echo "CONTRASEÑA (texto plano que pusiste aquí): {$admin_pass}" . PHP_EOL;
+    echo ">>> BORRA este archivo crear_admin.php después de usarlo por seguridad <<<" . PHP_EOL;
+} catch (PDOException $e) {
+    echo "Error al crear el admin: " . $e->getMessage() . PHP_EOL;
+    exit(1);
+}
